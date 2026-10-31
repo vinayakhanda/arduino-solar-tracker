@@ -50,6 +50,27 @@ class ArduinoMonitorApp:
         self.status_label = ttk.Label(control_frame, text="Status: Disconnected", foreground="red")
         self.status_label.pack(side="right", padx=5)
 
+        # Live values reported by single_axis/single_axis.ino
+        telemetry_frame = ttk.LabelFrame(self.root, text=" Live Tracker Data ", padding=10)
+        telemetry_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        self.telemetry_values = {}
+        telemetry_fields = (
+            ("Left LDR", "N/A"),
+            ("Right LDR", "N/A"),
+            ("Difference", "N/A"),
+            ("Tracking", "Waiting for data"),
+            ("Rotation", "N/A"),
+            ("Tilt", "N/A"),
+        )
+        for column, (name, initial_value) in enumerate(telemetry_fields):
+            field_frame = ttk.Frame(telemetry_frame)
+            field_frame.grid(row=0, column=column, padx=8, sticky="w")
+            ttk.Label(field_frame, text=name).pack(anchor="w")
+            value_label = ttk.Label(field_frame, text=initial_value, font=("TkDefaultFont", 11, "bold"))
+            value_label.pack(anchor="w")
+            self.telemetry_values[name] = value_label
+
         # Terminal / Log Area Frame
         terminal_frame = ttk.LabelFrame(self.root, text=" Live Arduino Output ", padding=10)
         terminal_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -121,8 +142,32 @@ class ArduinoMonitorApp:
         while not self.data_queue.empty():
             line = self.data_queue.get()
             self.terminal.insert(tk.END, line + "\n")
-            self.terminal.see(tk.END) # Auto-scroll to the bottom
+            self.terminal.see(tk.END)
+            self.update_telemetry(line)
         self.root.after(100, self.process_queue)
+
+    def update_telemetry(self, line):
+        fields = {}
+        for part in line.split("|"):
+            key, separator, value = part.strip().partition(":")
+            if separator:
+                fields[key.strip()] = value.strip()
+
+        required_fields = ("Left LDR", "Right LDR", "Difference", "Rotation angle", "Tilt angle")
+        if not all(field in fields for field in required_fields):
+            return
+
+        self.telemetry_values["Left LDR"].config(text=fields["Left LDR"])
+        self.telemetry_values["Right LDR"].config(text=fields["Right LDR"])
+        self.telemetry_values["Difference"].config(text=fields["Difference"])
+        self.telemetry_values["Rotation"].config(text=fields["Rotation angle"])
+        self.telemetry_values["Tilt"].config(text=fields["Tilt angle"])
+
+        status = next(
+            (part.strip() for part in line.split("|") if ":" not in part),
+            "Unknown",
+        )
+        self.telemetry_values["Tracking"].config(text=status)
 
     def log_to_terminal(self, message):
         self.terminal.insert(tk.END, message)
